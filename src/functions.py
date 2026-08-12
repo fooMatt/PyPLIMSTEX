@@ -89,7 +89,7 @@ def setup_peptide_data(data, normalise=False):
         maxD_all = []
         for i in data['Sequence'].unique():
             maxD_cum = []
-            for j in data[(data['Sequence'] == i) & (df['Exposure'] == 'maxD')]['Center']:
+            for j in data[(data['Sequence'] == i) & (data['Exposure'] == 'maxD')]['Center']:
                 maxD_cum.append(j)
                 maxD_avg = np.mean(maxD_cum)
             maxD_all.append(maxD_avg)
