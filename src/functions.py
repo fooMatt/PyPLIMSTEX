@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from pathlib import Path
 
 def import_dynamx_csv(csv_path):
@@ -47,8 +48,72 @@ def rename_exposure_entry(data, maxd_exists=False):
 
     return data
 
-def setup_peptide_data():
-    pass
+def setup_peptide_data(data, normalise=False):
+    """
+    Reads pandas dataframe and calculates average t0 deuteration
+    For each 'equivalent' of ligand, calculates the delta deuteration (i.e. shift in deuteration compared to t0)
+    Returns nested dictionary: for each peptide, lists delta deuteration for every ligand equivalent tested (or at least present in the data)
+    Each peptide will eventually produce 1 titration curve plotting delta deuteration against ligand equivalent  
+    """
+    # calculate average t0 for each sequence
+    t0_all = []
+    for i in data['Sequence'].unique():
+        t0_cum = []
+        for j in data[(data['Sequence'] == i) & (data['Exposure'] == 't0')]['Center']:
+            t0_cum.append(j)
+            t0_avg = np.mean(t0_cum)
+        t0_all.append(t0_avg)
+
+    # create a list of unique peptides and ligands
+    peptide_column = list(data['Sequence'].unique())
+    ligand_eq = list(data['Exposure'].unique())[2:]
+
+    peptide_data = {}
+
+    # create framework for peptide data
+    for i in peptide_column:
+        ligand_dict = {j:[] for j in ligand_eq}
+        peptide_data[i] = ligand_dict
+
+    # fill in the peptide data
+    for i in peptide_column:
+        current_seq = data[data['Sequence'] == i]
+        for j in ligand_eq:
+            current_eq = current_seq[current_seq['Exposure'] == j]
+            for k in current_eq['Center']:
+                peptide_data[i][j].append(k - t0_all[peptide_column.index(i)])
+
+    # if normalisation is true...
+    if normalise:
+        # loop to calculate average maxD for each sequence
+        maxD_all = []
+        for i in data['Sequence'].unique():
+            maxD_cum = []
+            for j in data[(data['Sequence'] == i) & (df['Exposure'] == 'maxD')]['Center']:
+                maxD_cum.append(j)
+                maxD_avg = np.mean(maxD_cum)
+            maxD_all.append(maxD_avg)
+
+        # normalise the data by maxD
+        peptide_data_maxD = {}
+
+        # create framework for normalised peptide data
+        for i in peptide_column:
+            ligand_dict = {j:[] for j in ligand_eq}
+            peptide_data_maxD[i] = ligand_dict
+
+        # fill in the normalised peptide data
+        for i in peptide_column:
+            current_seq = data[data['Sequence'] == i]
+            for j in ligand_eq:
+                current_eq = current_seq[current_seq['Exposure'] == j]
+                for k in current_eq['Center']:
+                    norm_value = 100 * (k - t0_all[peptide_column.index(i)]) / (maxD_all[peptide_column.index(i)] - t0_all[peptide_column.index(i)])
+                    peptide_data_maxD[i][j].append(norm_value)
+        
+        peptide_data = peptide_data_maxD
+
+    return peptide_data
 
 def ode_model():
     pass
