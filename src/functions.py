@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 from pathlib import Path
+from scipy.integrate import solve_ivp
+from scipy.optimize import minimize
 
 def import_dynamx_csv(csv_path):
     """
@@ -115,17 +117,112 @@ def setup_peptide_data(data, normalise=False):
 
     return peptide_data
 
-def ode_model():
-    pass
+def define_model(do_ODE):
+    """
+    Set up the model to calculate total deuteration as a function of bound ligand concentration (i.e. conc of protein-ligand complex) 
+    Parameters for the model are KD (dissociation constant), D0 (deuteration with no ligand), deltaD1 (), Ltot (total ligand concentration), and Ptot (total protein concentration)
+    Following Zhu et al. (2004), bound ligand concentration can be calculated by solving an ODE
+    In our 1:1 stoichiometry, we can also solve it analytically... this is computationally faster
+    ODE version is included for compatibility with the original PLIMSTEX method and also in case we expand it to 1:N stoichiometries in the future
+    """
+    if do_ODE:
+        def freeligand(Ltot, Lfree, Ptot, KD):
+            dLfreedLtot = (KD + Lfree) / (KD + 2*Lfree + Ptot - Ltot)
+            return dLfreedLtot
 
-def analytic_model():
-    pass
+        def totaldeut(Ltot, Ptot, D0, deltaD1, KD):
+            # solve ODE to determine Lfree for each value of Ltot
+            Lfree_init = 0 # if Ltot is 0, then obviously Lfree is 0
+            Ltot_span = [Ltot[0], Ltot[-1]]
+            Ltot_eval = np.linspace(Ltot_span[0], Ltot_span[1], 1000)
 
-def fit_model():
-    pass
+            sol = solve_ivp(freeligand, t_span=Ltot_span, y0=[Lfree_init],
+                            t_eval=Ltot_eval, args=(Ptot, KD), method='Radau', dense_output=True)
 
-def remove_outliers():
-    pass
+            # create lookup lists with Lfree values for each Ltot value
+            Lfree_lookup = sol.y[0]
+            Ltot_lookup = sol.t
+            Deut = []
+            # check which Ltot value in lookup list is closest to actual Ltot and return corresponding Lfree
+            Lfree_est = []
+            for L in Ltot:
+                idx = (np.abs(Ltot_lookup - L)).argmin()
+                Lfree_est.append(Lfree_lookup[idx])
+            Lfree_est = np.array(Lfree_est)
+            Deut = D0 - deltaD1 * ((Ltot - Lfree_est) / Ptot)
+            return Deut
+
+    else:
+        def totaldeut(Ltot, Ptot, D0, deltaD1, KD):
+            Ptot = float(Ptot)
+            D0 = float(D0)
+            deltaD1 = float(deltaD1)
+            KD = float(KD)
+            Lfree = []
+            for L in Ltot:
+                L = float(L)
+                Lfree_calc = ((L-KD-Ptot)+np.sqrt((Ptot-L+KD)**2 + 4*KD*L))/2
+                Lfree.append(float(Lfree_calc))
+            Lfree = np.array(Lfree)
+            Ltot = np.array(Ltot)
+            Deut = D0 - deltaD1 * ((Ltot - Lfree) / Ptot)
+            return Deut
+        
+    return totaldeut
+
+def fit_model(params, myargs):
+    """
+    Fits the model to the experimental data by varying the parameters D0, deltaD1 and KD in order to minimise the mean squared error from the observed deuteration
+    Requires initial estimates of these parameters as a starting point
+    Uses the L-BFGS-B algorithm for optimisation from scipy.optimize
+    No bounds on the parameters except for KD which must be positive by definition (since it is a ratio of concentrations)
+    """
+    # params should be (D0, deltaD1, KD)
+    # model is defined in totaldeut()
+    def mse(params, model, data, Ltot_exp, Ptot):
+        predict = model(Ltot_exp, Ptot, params[0], params[1], params[2])
+        sq_err = [(predict[i] - data[i])**2 for i in range(len(predict))]
+        return np.mean(sq_err)
+
+    # params is a list of the initial estimates
+    # myargs is a tuple of the model, data, Ltot_exp and Ptot
+    init_est = np.array(params)
+    res = minimize(mse, init_est, args=myargs, method='L-BFGS-B', bounds=[(None,None),(None,None),(0,None)])
+
+    # res.x should contain 3 values - D0, deltaD1 and KD
+    return res.x, res.fun
+    
+def remove_outliers(data, threshold):
+  """
+  Removes outliers for each ligand equivalent and for each peptide
+  Roughly, outliers are data points (an observed deuterium uptake) that lie far from the rest
+  This is done by comparing the ratios of distances between the two extreme points and their neighbours;
+  if the difference between the ratios is larger in magnitude than the threshold, the furthest point is removed.
+  Repeats until stable (no more points removed) or fewer than 3 points remain.
+  """
+  threshold = float(threshold)
+  clean_data = []
+
+  for i in data.values():
+    i = tuple(sorted(i))  # sorts in ascending order
+
+    while len(i) >= 3:
+      gap_low = i[1] - i[0]      # gap between smallest two points
+      gap_high = i[-1] - i[-2]   # gap between largest two points
+      span = i[-1] - i[0]        # total range
+
+      gl, gh = (g or 1e-8 for g in (gap_low, gap_high))  # avoid division by 0
+
+      if (span/gl) - (span/gh) > threshold:
+        i = i[:-1]   # drop the max, re-check
+      elif (span/gl) - (span/gh) < -threshold:
+        i = i[1:]    # drop the min, re-check
+      else:
+        break        # stable, stop removing
+
+    clean_data.append(i)
+
+  return clean_data
 
 def plot_plimstex_curve():
     pass
@@ -133,3 +230,8 @@ def plot_plimstex_curve():
 def pseudo_bootstrap():
     pass
 
+def loading_message():
+    """
+    Prints regular updates while PyPLIMSTEX analysis and plotting is taking place
+    """
+    pass
