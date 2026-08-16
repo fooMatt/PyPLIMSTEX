@@ -8,12 +8,12 @@ For now, only 1:1 protein-ligand stoichiometry can be analysed with this code, w
 ---
 ### Installation
 #### Pre-requisites
-**Python 3.8** or higher
+**Python 3.11** or higher
 
 ---
 #### Installing in a clean Conda environment 
    ```bash
-   conda create -y -n pyplimstex python=3.8
+   conda create -y -n pyplimstex python=3.11
    conda activate pyplimstex
    pip install git+https://github.com/fooMatt/PyPLIMSTEX.git
    ```
