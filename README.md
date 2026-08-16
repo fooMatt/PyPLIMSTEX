@@ -19,7 +19,14 @@ For now, only 1:1 protein-ligand stoichiometry can be analysed with this code, w
    ```
 
 ### Quick start
-TBD
+   You can modify to the template `config.toml` file in `assets/`.
+   
+   Note that the user still needs to 'pre-process' the HDX-MS data in DynamX and export this as a cluster CSV file as this code is unable to read the raw HDX-MS data.
+
+   Then run:
+   ```bash
+   pyplimstex --config path/to/config.toml (optionally: --workers NUM_WORKERS)
+   ```
 
 ---
 Made at the *Institut de Génomique Fonctionnelle*, Montpellier
