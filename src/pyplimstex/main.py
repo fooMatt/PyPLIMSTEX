@@ -1,15 +1,9 @@
 import argparse, tomllib
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.optimize import minimize
-from scipy.integrate import solve_ivp
-from sklearn.metrics import r2_score
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 
-from functions import import_dynamx_csv, make_output_dir, remove_extra_charge_states, rename_exposure_entry
-from functions import setup_peptide_data, define_model, pseudo_bootstrap, monitor_progress
+from pyplimstex.functions import import_dynamx_csv, make_output_dir, remove_extra_charge_states, rename_exposure_entry
+from pyplimstex.functions import setup_peptide_data, define_model, pseudo_bootstrap, monitor_progress
 
 # === parsing arguments ===
 p = argparse.ArgumentParser()

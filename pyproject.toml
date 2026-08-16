@@ -19,4 +19,4 @@ dependencies = [
 ]
 
 [project.scripts]
-pyplimstex = "src.main:launch_plimstex"
+pyplimstex = "pyplimstex.main:launch_plimstex"
