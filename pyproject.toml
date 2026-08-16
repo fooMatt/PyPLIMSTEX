@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "PLIMSTEX"
+name = "pyplimstex"
 version = "1.0.0"
 readme = "README.md"
 requires-python = ">=3.11"
