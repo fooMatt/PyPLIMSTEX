@@ -5,11 +5,6 @@ from concurrent.futures import ProcessPoolExecutor
 from pyplimstex.functions import import_dynamx_csv, make_output_dir, remove_extra_charge_states, rename_exposure_entry
 from pyplimstex.functions import setup_peptide_data, define_model, pseudo_bootstrap, monitor_progress
 
-# === parsing arguments ===
-p = argparse.ArgumentParser()
-p.add_argument('-c', '--config', type=str, required=True, help='Path to config.toml file')
-p.add_argument('-w', '--workers', type=int, required=False, default=4, help='Number of workers to spawn (default 4)')
-
 def plimstex(input, output, num_workers,
              renumber=0, protein_conc=1, 
              kd_init=0.1, d0_init=1, dd1_init=1, 
@@ -78,8 +73,15 @@ def launch_plimstex(config_path, num_workers):
 
     plimstex(**settings_dict, num_workers=num_workers)
 
-if __name__ == '__main__':
+def cli():
+    p = argparse.ArgumentParser()
+    p.add_argument('-c', '--config', type=str, required=True, help='Path to config.toml file')
+    p.add_argument('-w', '--workers', type=int, required=False, default=4, help='Number of workers to spawn (default 4)')
+
     args = p.parse_args()
     launch_plimstex(config_path=args.config,
                     num_workers=args.workers
                     )
+
+if __name__ == '__main__':
+    cli()
