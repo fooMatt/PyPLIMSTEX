@@ -1,8 +1,13 @@
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import random, time, csv
 from pathlib import Path
 from scipy.integrate import solve_ivp
 from scipy.optimize import minimize
+from sklearn.metrics import r2_score
 
 def import_dynamx_csv(csv_path):
     """
@@ -37,16 +42,18 @@ def rename_exposure_entry(data, maxd_exists=False):
     """
     Rename rows of t0, maxD and 0 ligand equivalents in the dataframe
     """
+    unique_exposures = sorted(data['Exposure'].unique(), key=float)
+
     data['Exposure'] = data['Exposure'].astype(str)
 
     if maxd_exists:
-        data.loc[data['Exposure'] == list(data['Exposure'].unique())[0], 'Exposure'] = 't0'
-        data.loc[data['Exposure'] == list(data['Exposure'].unique())[1], 'Exposure'] = 'maxD'
-        data.loc[data['Exposure'] == list(data['Exposure'].unique())[2], 'Exposure'] = '0'
+        data.loc[data['Exposure'] == unique_exposures[0], 'Exposure'] = 't0'
+        data.loc[data['Exposure'] == unique_exposures[1], 'Exposure'] = 'maxD'
+        data.loc[data['Exposure'] == unique_exposures[2], 'Exposure'] = '0'
 
     else:
-        data.loc[data['Exposure'] == list(data['Exposure'].unique())[0], 'Exposure'] = 't0'
-        data.loc[data['Exposure'] == list(data['Exposure'].unique())[1], 'Exposure'] = '0'
+        data.loc[data['Exposure'] == unique_exposures[0], 'Exposure'] = 't0'
+        data.loc[data['Exposure'] == unique_exposures[1], 'Exposure'] = '0'
 
     return data
 
@@ -60,10 +67,11 @@ def setup_peptide_data(data, normalise=False):
     # calculate average t0 for each sequence
     t0_all = []
     for i in data['Sequence'].unique():
-        t0_cum = []
-        for j in data[(data['Sequence'] == i) & (data['Exposure'] == 't0')]['Center']:
-            t0_cum.append(j)
-            t0_avg = np.mean(t0_cum)
+        t0_cum = list(data[(data['Sequence'] == i) & (data['Exposure'] == 't0')]['Center'])
+        if len(t0_cum) == 0:
+            raise ValueError(f"[ERROR] No t0 data found for peptide {i}")
+            
+        t0_avg = np.mean(t0_cum)
         t0_all.append(t0_avg)
 
     # create a list of unique peptides and ligands
@@ -90,10 +98,10 @@ def setup_peptide_data(data, normalise=False):
         # loop to calculate average maxD for each sequence
         maxD_all = []
         for i in data['Sequence'].unique():
-            maxD_cum = []
-            for j in data[(data['Sequence'] == i) & (data['Exposure'] == 'maxD')]['Center']:
-                maxD_cum.append(j)
-                maxD_avg = np.mean(maxD_cum)
+            maxD_cum = list(data[(data['Sequence'] == i) & (data['Exposure'] == 'maxD')]['Center'])
+            if len(maxD_cum) == 0:
+                raise ValueError(f"[ERROR] No maxD data found for peptide {i}")
+            maxD_avg = np.mean(maxD_cum)
             maxD_all.append(maxD_avg)
 
         # normalise the data by maxD
@@ -224,14 +232,132 @@ def remove_outliers(data, threshold):
 
   return clean_data
 
-def plot_plimstex_curve():
-    pass
-
-def pseudo_bootstrap():
-    pass
-
-def loading_message():
+def pseudo_bootstrap(deut_data, peptide, Ptot, KD_init, D0_init, dD1_init, 
+                     outlier_threshold, deuteration_model, bootstrap,
+                     output_dir, orig_df, normalise=False):
     """
-    Prints regular updates while PyPLIMSTEX analysis and plotting is taking place
+    Runs pseudo-bootstrap for one peptide to estimate KD 
+    by fitting model deuteration to experimental deuteration
+    Calculates average KD and standard deviation over all runs
+    Plots all runs on one plot and saves to output directory 
+    """ 
+    # data here refers to deuteration data for a given peptide
+    ligand_conc_eqs = [float(eq) for eq in list(deut_data.keys())]
+    ligand_conc_eqs = np.array(ligand_conc_eqs)
+
+    # convert to absolute concentrations in µM
+    ligand_conc_abs = [float(eq) * Ptot for eq in list(deut_data.keys())] 
+    ligand_conc_abs = np.array(ligand_conc_abs)
+
+    init_estimates = [D0_init, dD1_init, KD_init] # initial estimates for D0, deltaD1 and KD
+
+    cleaned_data = remove_outliers(deut_data, outlier_threshold)
+
+    # define function for modelling deuteration
+    totaldeut = deuteration_model
+
+    fig, ax = plt.subplots()
+
+    KD_list = []
+    r2_list = []
+    for i in range(bootstrap):
+        # pick one data point per ligand concentration for fitting
+        deuteration_exp = np.array([np.random.choice(t) for t in cleaned_data])
+
+        estimate = fit_model(init_estimates, (totaldeut, deuteration_exp, ligand_conc_abs, Ptot))
+        
+        # plot data and fitted curve for visualisation
+        D0_est = estimate[0][0]
+        deltaD1_est = estimate[0][1]
+        KD_est = estimate[0][2]
+        KD_list.append(KD_est)
+        
+        deut_est_plotted = totaldeut(np.linspace(ligand_conc_abs[0],ligand_conc_abs[-1]), Ptot, D0_est, deltaD1_est, KD_est)
+        deut_est = totaldeut(ligand_conc_abs, Ptot, D0_est, deltaD1_est, KD_est)
+        
+        r_squared = r2_score(deuteration_exp, deut_est)
+        r2_list.append(r_squared)
+
+        ax.plot(ligand_conc_eqs, deuteration_exp, 'o', label='Data', color='black', alpha=0.5)
+        ax.plot(np.linspace(ligand_conc_eqs[0],ligand_conc_eqs[-1]), deut_est_plotted, '-', label='Fit', alpha=0.75)
+        ax.set_xlabel('[Ligand total]/[Protein total]')
+        if normalise:
+            ax.set_ylabel('Relative deuteration (% of max D)')
+        else:
+            ax.set_ylabel('Absolute deuteration (Da)')
+        ax.set_title(f'Fitted PLIMSTEX curve for {peptide}')
+
+    KD_avg = np.average(KD_list)
+    KD_sd = np.std(KD_list)
+    r2_avg = np.average(r2_list)
+
+    ax.text(0.5, -0.15, f"Average R-squared: {r2_avg:.3f}\nAverage KD: {KD_avg:.3f} ± {KD_sd:.3f} µM",
+            horizontalalignment='center',
+            verticalalignment='top',
+            transform=ax.transAxes) # Use transAxes to position text relative to the axes
+
+    # Save the plot to a PNG file
+    pep_start = str(list(set(orig_df[orig_df['Sequence']==peptide]['Start'].unique()))[0])
+    pep_end = str(list(set(orig_df[orig_df['Sequence']==peptide]['End'].unique()))[0])
+    peptide_name = pep_start+"-"+pep_end+"_"+peptide
+    figure_path = Path(output_dir).resolve() / f"PLIMSTEX fit for {peptide_name}.png"
+    fig.savefig(figure_path, bbox_inches='tight') # Use bbox_inches='tight' to include the text
+    plt.close(fig)
+
+    # also save KD_list and r2_list for further analysis
+    rows = zip(KD_list, r2_list)
+    save_csv_path = Path(output_dir).resolve() / f"Estimated KD and R-squared of fits for {peptide_name}.csv"
+    with open(save_csv_path, "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Estimated KD", "R-squared of fit"])
+        writer.writerows(rows)
+    
+def monitor_progress(loading_text, peptide_dict, task_futures):
     """
-    pass
+    Prints regular updates (every 15 seconds) while PyPLIMSTEX analysis and plotting is taking place
+    """
+    loading_text = Path(loading_text).resolve()
+    lines = Path(loading_text).read_text(encoding="utf-8").splitlines()
+
+    total_peptides = len(peptide_dict.keys())
+
+    first_iteration = True
+
+    while True:
+        succeeded = 0
+        failed = 0
+        cancelled = 0
+
+        # Inspect state of each future
+        for f in task_futures:
+            if f.done():
+                if f.cancelled():
+                    cancelled += 1
+                elif f.exception() is not None:
+                    failed += 1
+                else:
+                    succeeded += 1
+
+        finished_peptides = succeeded + failed + cancelled
+        selected = random.choice(lines)   
+
+        if not first_iteration:
+            # \033[F moves cursor UP 1 line. \033[4F moves cursor UP 4 lines.
+            print("\033[6F", end="")
+        else:
+            first_iteration = False
+
+        # Print your 4 lines as normal (use \033[K to clear any leftover characters per line)
+        print(f"\033[KFinished processing {finished_peptides} / {total_peptides} peptides...")
+        print(f"\033[K  • Succeeded: {succeeded}")
+        print(f"\033[K  • Failed:    {failed}")
+        print(f"\033[K  • Cancelled: {cancelled}")
+        print("\033[K=====")
+        print(f"\033[KDid you know? {selected}")
+        
+        if finished_peptides == total_peptides:
+            break
+
+        time.sleep(15)
+
+    print("Finished processing all peptides!")
