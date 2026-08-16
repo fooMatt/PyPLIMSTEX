@@ -47,13 +47,13 @@ def rename_exposure_entry(data, maxd_exists=False):
     data['Exposure'] = data['Exposure'].astype(str)
 
     if maxd_exists:
-        data.loc[data['Exposure'] == unique_exposures[0], 'Exposure'] = 't0'
-        data.loc[data['Exposure'] == unique_exposures[1], 'Exposure'] = 'maxD'
-        data.loc[data['Exposure'] == unique_exposures[2], 'Exposure'] = '0'
+        data.loc[data['Exposure'] == str(unique_exposures[0]), 'Exposure'] = 't0'
+        data.loc[data['Exposure'] == str(unique_exposures[1]), 'Exposure'] = 'maxD'
+        data.loc[data['Exposure'] == str(unique_exposures[2]), 'Exposure'] = '0'
 
     else:
-        data.loc[data['Exposure'] == unique_exposures[0], 'Exposure'] = 't0'
-        data.loc[data['Exposure'] == unique_exposures[1], 'Exposure'] = '0'
+        data.loc[data['Exposure'] == str(unique_exposures[0]), 'Exposure'] = 't0'
+        data.loc[data['Exposure'] == str(unique_exposures[1]), 'Exposure'] = '0'
 
     return data
 
