@@ -125,58 +125,49 @@ def setup_peptide_data(data, normalise=False):
 
     return peptide_data
 
+def _totaldeut_ode(Ltot, Ptot, D0, deltaD1, KD):
+    Lfree_init = 0
+    Ltot_span = [Ltot[0], Ltot[-1]]
+    Ltot_eval = np.linspace(Ltot_span[0], Ltot_span[1], 1000)
+
+    sol = solve_ivp(_freeligand, t_span=Ltot_span, y0=[Lfree_init],
+                    t_eval=Ltot_eval, args=(Ptot, KD), method='Radau', dense_output=True)
+
+    Lfree_lookup = sol.y[0]
+    Ltot_lookup = sol.t
+    Lfree_est = []
+    for L in Ltot:
+        idx = (np.abs(Ltot_lookup - L)).argmin()
+        Lfree_est.append(Lfree_lookup[idx])
+    Lfree_est = np.array(Lfree_est)
+    Deut = D0 - deltaD1 * ((Ltot - Lfree_est) / Ptot)
+    return Deut
+
+def _freeligand(Ltot, Lfree, Ptot, KD):
+    dLfreedLtot = (KD + Lfree) / (KD + 2*Lfree + Ptot - Ltot)
+    return dLfreedLtot
+
+def _totaldeut_analytical(Ltot, Ptot, D0, deltaD1, KD):
+    Ptot = float(Ptot)
+    D0 = float(D0)
+    deltaD1 = float(deltaD1)
+    KD = float(KD)
+    Lfree = []
+    for L in Ltot:
+        L = float(L)
+        Lfree_calc = ((L-KD-Ptot)+np.sqrt((Ptot-L+KD)**2 + 4*KD*L))/2
+        Lfree.append(float(Lfree_calc))
+    Lfree = np.array(Lfree)
+    Ltot = np.array(Ltot)
+    Deut = D0 - deltaD1 * ((Ltot - Lfree) / Ptot)
+    return Deut
+
 def define_model(do_ODE):
     """
-    Set up the model to calculate total deuteration as a function of bound ligand concentration (i.e. conc of protein-ligand complex) 
-    Parameters for the model are KD (dissociation constant), D0 (deuteration with no ligand), deltaD1 (), Ltot (total ligand concentration), and Ptot (total protein concentration)
-    Following Zhu et al. (2004), bound ligand concentration can be calculated by solving an ODE
-    In our 1:1 stoichiometry, we can also solve it analytically... this is computationally faster
-    ODE version is included for compatibility with the original PLIMSTEX method and also in case we expand it to 1:N stoichiometries in the future
+    Returns the appropriate module-level deuteration model function (ODE-based or analytical),
+    both defined outside this function so they remain picklable for ProcessPoolExecutor workers
     """
-    if do_ODE:
-        def freeligand(Ltot, Lfree, Ptot, KD):
-            dLfreedLtot = (KD + Lfree) / (KD + 2*Lfree + Ptot - Ltot)
-            return dLfreedLtot
-
-        def totaldeut(Ltot, Ptot, D0, deltaD1, KD):
-            # solve ODE to determine Lfree for each value of Ltot
-            Lfree_init = 0 # if Ltot is 0, then obviously Lfree is 0
-            Ltot_span = [Ltot[0], Ltot[-1]]
-            Ltot_eval = np.linspace(Ltot_span[0], Ltot_span[1], 1000)
-
-            sol = solve_ivp(freeligand, t_span=Ltot_span, y0=[Lfree_init],
-                            t_eval=Ltot_eval, args=(Ptot, KD), method='Radau', dense_output=True)
-
-            # create lookup lists with Lfree values for each Ltot value
-            Lfree_lookup = sol.y[0]
-            Ltot_lookup = sol.t
-            Deut = []
-            # check which Ltot value in lookup list is closest to actual Ltot and return corresponding Lfree
-            Lfree_est = []
-            for L in Ltot:
-                idx = (np.abs(Ltot_lookup - L)).argmin()
-                Lfree_est.append(Lfree_lookup[idx])
-            Lfree_est = np.array(Lfree_est)
-            Deut = D0 - deltaD1 * ((Ltot - Lfree_est) / Ptot)
-            return Deut
-
-    else:
-        def totaldeut(Ltot, Ptot, D0, deltaD1, KD):
-            Ptot = float(Ptot)
-            D0 = float(D0)
-            deltaD1 = float(deltaD1)
-            KD = float(KD)
-            Lfree = []
-            for L in Ltot:
-                L = float(L)
-                Lfree_calc = ((L-KD-Ptot)+np.sqrt((Ptot-L+KD)**2 + 4*KD*L))/2
-                Lfree.append(float(Lfree_calc))
-            Lfree = np.array(Lfree)
-            Ltot = np.array(Ltot)
-            Deut = D0 - deltaD1 * ((Ltot - Lfree) / Ptot)
-            return Deut
-        
-    return totaldeut
+    return _totaldeut_ode if do_ODE else _totaldeut_analytical
 
 def fit_model(params, myargs):
     """
