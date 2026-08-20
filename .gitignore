@@ -1,0 +1,4 @@
+*.pptx
+.vscode
+tests
+__pycache__

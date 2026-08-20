@@ -1,0 +1,37 @@
+[settings]
+input = "path/to/input/csv"
+output = "path/to/output/folder"
+
+# add this offset to amino acid residue numbering
+# new index of first AA would be 1+'renumber'
+renumber = 0
+
+# total protein concentration in deuterated sample (in μM)
+protein_conc = 1
+
+# initial estimates of parameters
+    # best initial estimate of the dissociation constant (in μM)
+    kd_init = 0.1
+    # best initial estimate of the deuteration amount when no ligand is present (in Da if not normalising, else in % uptake)
+    d0_init = 1
+    # best initial estimate of the difference in deuteration between D0 and the fully saturated system (in Da if not normalising, else in % uptake)
+    dd1_init = 1
+
+# tolerance for outlier data points (higher number = more tolerant)
+# should be a positive number, if set to 0, will not remove any outliers
+outlier_threshold = 2
+
+# number of iterations for the pseudo-bootstrapping of each peptide
+bootstrap = 100
+
+# maximum deuteration data is included in DynamX analysis ?
+maxd_exists = false
+
+# normalise deuteration as a % of experimentally obtained maximum deuteration
+normalise_maxd = false
+
+# solve for free ligand concentration using scipy's solve_ivp Radau method instead of an analytical solution
+do_ode = true
+
+# do not count pseudo-bootstrap run if the R^2 is less than 0.25 (i.e. model explains less than 25% of the variability)  
+remove_badfits = false
