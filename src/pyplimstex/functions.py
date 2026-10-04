@@ -235,6 +235,7 @@ def pseudo_bootstrap(deut_data, peptide, Ptot, KD_init, D0_init, dD1_init,
     # data here refers to deuteration data for a given peptide
     ligand_conc_eqs = [float(eq) for eq in list(deut_data.keys())]
     ligand_conc_eqs = np.array(ligand_conc_eqs)
+    lig_conc_eqs_smooth = np.linspace(ligand_conc_eqs[0],ligand_conc_eqs[-1]) # for plotting smooth curve
 
     # convert to absolute concentrations in µM
     ligand_conc_abs = [float(eq) * Ptot for eq in list(deut_data.keys())] 
@@ -251,10 +252,13 @@ def pseudo_bootstrap(deut_data, peptide, Ptot, KD_init, D0_init, dD1_init,
 
     KD_list = []
     r2_list = []
+    deut_exp_list = []
+    deut_model_list = []
+
     for i in range(bootstrap):
         # pick one data point per ligand concentration for fitting
         deuteration_exp = np.array([np.random.choice(t) for t in cleaned_data])
-
+        deut_exp_list.append(deuteration_exp) # save chosen experimental detueration values
         estimate = fit_model(init_estimates, (totaldeut, deuteration_exp, ligand_conc_abs, Ptot))
         
         # plot data and fitted curve for visualisation
@@ -263,14 +267,15 @@ def pseudo_bootstrap(deut_data, peptide, Ptot, KD_init, D0_init, dD1_init,
         KD_est = estimate[0][2]
         KD_list.append(KD_est)
         
-        deut_est_plotted = totaldeut(np.linspace(ligand_conc_abs[0],ligand_conc_abs[-1]), Ptot, D0_est, deltaD1_est, KD_est)
+        deut_model_plotted = totaldeut(np.linspace(ligand_conc_abs[0],ligand_conc_abs[-1]), Ptot, D0_est, deltaD1_est, KD_est)
+        deut_model_list.append(deut_model_plotted) # save estimated deuteration values
         deut_est = totaldeut(ligand_conc_abs, Ptot, D0_est, deltaD1_est, KD_est)
         
         r_squared = r2_score(deuteration_exp, deut_est)
         r2_list.append(r_squared)
 
         ax.plot(ligand_conc_eqs, deuteration_exp, 'o', label='Data', color='black', alpha=0.5)
-        ax.plot(np.linspace(ligand_conc_eqs[0],ligand_conc_eqs[-1]), deut_est_plotted, '-', label='Fit', alpha=0.75)
+        ax.plot(lig_conc_eqs_smooth, deut_model_plotted, '-', label='Fit', alpha=0.75)
         ax.set_xlabel('[Ligand total]/[Protein total]')
         if normalise:
             ax.set_ylabel('Relative deuteration (% of max D)')
@@ -292,16 +297,39 @@ def pseudo_bootstrap(deut_data, peptide, Ptot, KD_init, D0_init, dD1_init,
     pep_end = str(list(set(orig_df[orig_df['Sequence']==peptide]['End'].unique()))[0])
     peptide_name = pep_start+"-"+pep_end+"_"+peptide
     figure_path = Path(output_dir).resolve() / f"PLIMSTEX fit for {peptide_name}.png"
-    fig.savefig(figure_path, bbox_inches='tight') # Use bbox_inches='tight' to include the text
+    fig.savefig(figure_path, bbox_inches='tight')
     plt.close(fig)
 
+    # save plot data points (experimental and modelled) in case users want to plot with external software
+    exp_rows = [
+        {'iteration': i, 'ligand_conc_eqs': x, 'experimental_deut': y}
+        for i, deut in enumerate(deut_exp_list)
+        for x, y in zip(ligand_conc_eqs, deut)
+    ]
+
+    model_rows = [
+        {'iteration': i, 'ligand_conc_eqs': x, 'modelled_deut': y}
+        for i, deut in enumerate(deut_model_list)
+        for x, y in zip(lig_conc_eqs_smooth, deut)
+    ]
+
+    save_exp_plot_csv_path = Path(output_dir).resolve() / f"Plotted experimental data for {peptide_name}.csv"
+    save_model_plot_csv_path = Path(output_dir).resolve() / f"Plotted model data for {peptide_name}.csv"
+
+    exp_plot_df = pd.DataFrame(exp_rows) 
+    model_plot_df = pd.DataFrame(model_rows)
+
+    exp_plot_df.to_csv(save_exp_plot_csv_path, index=False, encoding="utf-8")
+    model_plot_df.to_csv(save_model_plot_csv_path, index=False, encoding="utf-8")
+
     # also save KD_list and r2_list for further analysis
-    rows = zip(KD_list, r2_list)
-    save_csv_path = Path(output_dir).resolve() / f"Estimated KD and R-squared of fits for {peptide_name}.csv"
-    with open(save_csv_path, "w", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-        writer.writerow(["Estimated KD", "R-squared of fit"])
-        writer.writerows(rows)
+    save_params_csv_path = Path(output_dir).resolve() / f"Estimated KD and R-squared of fits for {peptide_name}.csv"
+    params_df = pd.DataFrame({
+        "iteration": list(range(bootstrap)),
+        "estimated_KD": KD_list,
+        "R-squared": r2_list
+        })
+    params_df.to_csv(save_params_csv_path, index=False, encoding="utf-8")
     
 def monitor_progress(loading_text, peptide_dict, task_futures):
     """
