@@ -333,7 +333,7 @@ def pseudo_bootstrap(deut_data, peptide, Ptot, KD_init, D0_init, dD1_init,
     
 def monitor_progress(loading_text, peptide_dict, task_futures):
     """
-    Prints regular updates (every 15 seconds) while PyPLIMSTEX analysis and plotting is taking place
+    Prints regular updates (every 10 seconds) while PyPLIMSTEX analysis and plotting is taking place
     """
     loading_text = Path(loading_text).resolve()
     lines = Path(loading_text).read_text(encoding="utf-8").splitlines()
@@ -377,6 +377,6 @@ def monitor_progress(loading_text, peptide_dict, task_futures):
         if finished_peptides == total_peptides:
             break
 
-        time.sleep(15)
+        time.sleep(10)
 
     print("Finished processing all peptides!")
